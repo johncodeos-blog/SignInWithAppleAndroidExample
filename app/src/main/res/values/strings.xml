@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">SignInWithAppleExample</string>
+    <string name="title_activity_details">DetailsActivity</string>
+</resources>
