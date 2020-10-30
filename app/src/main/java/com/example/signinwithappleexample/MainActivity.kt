@@ -46,14 +46,14 @@ class MainActivity : AppCompatActivity() {
         val state = UUID.randomUUID().toString()
 
         appleAuthURLFull =
-            AppleConstants.AUTHURL + "?response_type=code&v=1.1.6&response_mode=form_post&client_id=" + AppleConstants.CLIENT_ID + "&scope=" + AppleConstants.SCOPE + "&state=" + state + "&redirect_uri=" + AppleConstants.REDIRECT_URI
+            AppleConstants.AUTHURL + "?client_id=" + AppleConstants.CLIENT_ID + "&redirect_uri=" + AppleConstants.REDIRECT_URI + "&response_type=code&scope=" + AppleConstants.SCOPE + "&response_mode=form_post&state=" + state
 
         apple_login_btn.setOnClickListener {
-            setupAppleWebviewDialog(appleAuthURLFull)
+            setupAppleWebViewDialog(appleAuthURLFull)
         }
 
-        GlobalScope.launch {
-            val results = GlobalScope.async { isLoggedIn() }
+        CoroutineScope(Dispatchers.Default).launch {
+            val results = CoroutineScope(Dispatchers.IO).async { isLoggedIn() }
             val result = results.await()
             if (result) {
                 // Show the Activity with the logged in user
@@ -71,21 +71,21 @@ class MainActivity : AppCompatActivity() {
 
         val currentTime = System.currentTimeMillis() / 1000L // Check the current Unix Time
 
-        if (currentTime >= expireTime) {
+        return if (currentTime >= expireTime) {
             // After 24 hours validate the Refresh Token and generate new Access Token
             val untilUnixTime =
                 currentTime + (60 * 60 * 24) // Execute the method after 24 hours again
             sharedPref.edit().putLong("verify_refresh_token_timer", untilUnixTime).apply()
-            return verifyRefreshToken()
+            verifyRefreshToken()
         } else {
-            return true
+            true
         }
     }
 
 
     // Show 'Sign in with Apple' login page in a dialog
     @SuppressLint("SetJavaScriptEnabled")
-    fun setupAppleWebviewDialog(url: String) {
+    fun setupAppleWebViewDialog(url: String) {
         appledialog = Dialog(this)
         val webView = WebView(this)
         webView.isVerticalScrollBarEnabled = false
@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         appledialog.show()
     }
 
-    // A client to know about WebView navigations
+    // A client to know about WebView navigation
     // For API 21 and above
     @Suppress("OverridingDeprecatedMember")
     inner class AppleWebViewClient : WebViewClient() {
@@ -106,10 +106,12 @@ class MainActivity : AppCompatActivity() {
             view: WebView?,
             request: WebResourceRequest?
         ): Boolean {
-            if (request!!.url.toString().startsWith(AppleConstants.REDIRECT_URI)) {
-                handleUrl(request.url.toString())
+            if (request?.url.toString().startsWith(AppleConstants.REDIRECT_URI)) {
+
+                handleUrl(request?.url.toString())
+
                 // Close the dialog after getting the authorization code
-                if (request.url.toString().contains("success=")) {
+                if (request?.url.toString().contains("success=")) {
                     appledialog.dismiss()
                 }
                 return true
@@ -120,7 +122,9 @@ class MainActivity : AppCompatActivity() {
         // For API 19 and below
         override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
             if (url.startsWith(AppleConstants.REDIRECT_URI)) {
+
                 handleUrl(url)
+
                 // Close the dialog after getting the authorization code
                 if (url.contains("success=")) {
                     appledialog.dismiss()
@@ -133,20 +137,22 @@ class MainActivity : AppCompatActivity() {
         @SuppressLint("ClickableViewAccessibility")
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
+
             // retrieve display dimensions
             val displayRectangle = Rect()
             val window = this@MainActivity.window
             window.decorView.getWindowVisibleDisplayFrame(displayRectangle)
 
             // Set height of the Dialog to 90% of the screen
-            val layoutparms = view?.layoutParams
-            layoutparms?.height = (displayRectangle.height() * 0.9f).toInt()
-            view?.layoutParams = layoutparms
+            val layoutParams = view?.layoutParams
+            layoutParams?.height = (displayRectangle.height() * 0.9f).toInt()
+            view?.layoutParams = layoutParams
         }
 
-        // Check webview url for access token code or error
+        // Check WebView url for access token code or error
         @SuppressLint("LongLogTag")
         private fun handleUrl(url: String) {
+
             val uri = Uri.parse(url)
 
             val success = uri.getQueryParameter("success")
@@ -159,6 +165,7 @@ class MainActivity : AppCompatActivity() {
                 // Get the Client Secret from the URL
                 appleClientSecret = uri.getQueryParameter("client_secret") ?: ""
                 Log.i("Apple Client Secret: ", appleClientSecret)
+
                 // Save the Client Secret (appleClientSecret) using SharedPreferences
                 // This will allow us to verify if refresh Token is valid every time they open the app after cold start.
                 val sharedPref = getPreferences(Context.MODE_PRIVATE)
@@ -166,6 +173,7 @@ class MainActivity : AppCompatActivity() {
 
                 //Check if user gave access to the app for the first time by checking if the url contains their email
                 if (url.contains("email")) {
+
                     //Get user's First Name
                     val firstName = uri.getQueryParameter("first_name")
                     Log.i("Apple User First Name: ", firstName ?: "")
@@ -193,20 +201,18 @@ class MainActivity : AppCompatActivity() {
                 Log.e("ERROR", "We couldn't get the Auth Code")
             }
         }
-
     }
 
     private fun requestForAccessToken(code: String, clientSecret: String) {
+
         val grantType = "authorization_code"
 
         val postParamsForAuth =
             "grant_type=" + grantType + "&code=" + code + "&redirect_uri=" + AppleConstants.REDIRECT_URI + "&client_id=" + AppleConstants.CLIENT_ID + "&client_secret=" + clientSecret
 
-
-        GlobalScope.launch {
-            val url = URL(AppleConstants.TOKENURL)
+        CoroutineScope(Dispatchers.Default).launch {
             val httpsURLConnection =
-                withContext(Dispatchers.IO) { url.openConnection() as HttpsURLConnection }
+                withContext(Dispatchers.IO) { URL(AppleConstants.TOKENURL).openConnection() as HttpsURLConnection }
             httpsURLConnection.requestMethod = "POST"
             httpsURLConnection.setRequestProperty(
                 "Content-Type",
@@ -224,20 +230,21 @@ class MainActivity : AppCompatActivity() {
 
             val jsonObject = JSONTokener(response).nextValue() as JSONObject
 
-            val accessToken = jsonObject.getString("access_token") //Here is the access token
+            val accessToken = jsonObject.getString("access_token") // Here is the access token
             Log.i("Apple Access Token is: ", accessToken)
             appleAccessToken = accessToken
 
-            val expiresIn = jsonObject.getInt("expires_in") //When the access token expires
+            val expiresIn = jsonObject.getInt("expires_in") // When the access token expires
             Log.i("expires in: ", expiresIn.toString())
 
             val refreshToken =
                 jsonObject.getString("refresh_token") // The refresh token used to regenerate new access tokens. Store this token securely on your server.
             Log.i("refresh token: ", refreshToken)
+
             // Save the RefreshToken Token (refreshToken) using SharedPreferences
             // This will allow us to verify if refresh Token is valid every time they open the app after cold start.
             val sharedPref = getPreferences(Context.MODE_PRIVATE)
-            sharedPref.edit().putString("refresh_token", refreshToken ?: "").apply()
+            sharedPref.edit().putString("refresh_token", refreshToken).apply()
 
 
             val idToken =
@@ -273,6 +280,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun verifyRefreshToken(): Boolean {
+
         // Verify Refresh Token only once a day
         val sharedPref = this.getPreferences(Context.MODE_PRIVATE)
         val refreshToken = sharedPref.getString("refresh_token", "")
@@ -281,9 +289,8 @@ class MainActivity : AppCompatActivity() {
         val postParamsForAuth =
             "grant_type=refresh_token" + "&client_id=" + AppleConstants.CLIENT_ID + "&client_secret=" + clientSecret + "&refresh_token=" + refreshToken
 
-        val url = URL(AppleConstants.TOKENURL)
         val httpsURLConnection =
-            withContext(Dispatchers.IO) { url.openConnection() as HttpsURLConnection }
+            withContext(Dispatchers.IO) { URL(AppleConstants.TOKENURL).openConnection() as HttpsURLConnection }
         httpsURLConnection.requestMethod = "POST"
         httpsURLConnection.setRequestProperty(
             "Content-Type",
@@ -297,20 +304,20 @@ class MainActivity : AppCompatActivity() {
             outputStreamWriter.flush()
 
         }
-        try {
+        return try {
             val response = httpsURLConnection.inputStream.bufferedReader()
                 .use { it.readText() }  // defaults to UTF-8
             val jsonObject = JSONTokener(response).nextValue() as JSONObject
             val newAccessToken = jsonObject.getString("access_token")
             //Replace the Access Token on your server with the new one
             Log.d("New Access Token: ", newAccessToken)
-            return true
+            true
         } catch (e: Exception) {
             Log.e(
                 "ERROR: ",
                 "Refresh Token has expired or user revoked app credentials"
             )
-            return false
+            false
         }
     }
 }
